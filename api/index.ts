@@ -1,5 +1,5 @@
 import express from 'express';
-import { createApi } from './lib/api.ts';
+import { createApi } from './lib/api.js';
 
 const app = express();
 app.use('/api', createApi());

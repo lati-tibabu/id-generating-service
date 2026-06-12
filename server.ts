@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { createApi } from './api/lib/api.ts';
+import { createApi } from './api/lib/api.js';
 
 async function startServer() {
   const app = express();
@@ -34,4 +34,3 @@ async function startServer() {
 startServer().catch((err) => {
   console.error('Critical server startup failure:', err);
 });
-

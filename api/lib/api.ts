@@ -1,5 +1,6 @@
 import express from 'express';
-import { generateIdCardPdf, IdCardData } from './pdfGenerator.ts';
+import { generateIdCardPdf } from './pdfGenerator.js';
+import type { IdCardData } from './pdfGenerator.js';
 
 export function createApi() {
   const api = express.Router();
