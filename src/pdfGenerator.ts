@@ -34,7 +34,7 @@ async function getImageBuffer(photoInput: string): Promise<Buffer | null> {
 
     // 2. Handle HTTP/HTTPS URLs
     if (photoInput.startsWith('http://') || photoInput.startsWith('https://')) {
-      const response = await fetch(photoInput, { signal: AbortSignal.timeout(4000) });
+      const response = await fetch(photoInput, { signal: AbortSignal.timeout(8000) });
       if (!response.ok) return null;
       const arrayBuffer = await response.arrayBuffer();
       return Buffer.from(arrayBuffer);
@@ -138,14 +138,18 @@ export async function generateIdCardPdf(data: IdCardData): Promise<Buffer> {
     autoFirstPage: false,
   });
 
-  const chunks: Buffer[] = [];
-  doc.on('data', (chunk) => chunks.push(chunk));
-
   // Try fetching the profile photo if available
   const imgBuffer = photoUrl ? await getImageBuffer(photoUrl) : null;
 
-  // --- PAGE 1: FRONT SIDE ---
-  doc.addPage();
+  return new Promise<Buffer>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', (err) => reject(err));
+
+    // --- PAGE 1: FRONT SIDE ---
+    doc.addPage();
 
   // Draw rounded card border
   const cornerRadius = 14;
@@ -684,16 +688,8 @@ export async function generateIdCardPdf(data: IdCardData): Promise<Buffer> {
        });
   }
 
-  // End and flush stream
-  doc.end();
-
-  return new Promise<Buffer>((resolve, reject) => {
-    doc.on('end', () => {
-      resolve(Buffer.concat(chunks));
-    });
-    doc.on('error', (err) => {
-      reject(err);
-    });
+    // End and flush stream
+    doc.end();
   });
 }
 
