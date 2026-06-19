@@ -31,26 +31,36 @@ const BRAND_COLORS = [
   { name: 'Vibrant Magenta', hex: '#DB2777', text: '#FFFFFF' },
 ];
 
+const formatDate = (date: Date) => date.toISOString().slice(0, 10);
+const addYears = (date: Date, years: number) => {
+  const next = new Date(date);
+  next.setFullYear(next.getFullYear() + years);
+  return next;
+};
+
 export default function App() {
+  const defaultIssuedDate = formatDate(new Date());
+  const defaultExpiryDate = formatDate(addYears(new Date(defaultIssuedDate), 2));
+
   // 1. App State for Interactive Documentation Playground
   const [formData, setFormData] = useState({
     name: 'Jane Smith',
     role: 'Staff Engineer',
     orgName: 'Hyperion Tech',
-    idNumber: 'HT-2026-9042',
-    email: 'jane.smith@hyperion.io',
+    idNumber: '',
+    email: '',
     phone: '+1 (555) 392-0941',
     bloodGroup: 'O+',
-    issuedDate: '06/2026',
-    expiryDate: '06/2031',
+    issuedDate: defaultIssuedDate,
+    expiryDate: defaultExpiryDate,
     photoUrl: '', // url or base64
     themeColor: '#1E293B',
     themeTextColor: '#FFFFFF',
-    layout: 'vertical' as 'vertical' | 'horizontal',
+    layout: 'horizontal' as 'vertical' | 'horizontal',
   });
 
   const [activeTab, setActiveTab] = useState<'endpoints' | 'playground' | 'curl'>('endpoints');
-  const [copiedText, setCopiedText] = useState<'curl' | 'js' | 'python' | 'link' | null>(null);
+  const [copiedText, setCopiedText] = useState<'curl' | 'curl-minimum' | 'js' | 'python' | 'link' | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [customHex, setCustomHex] = useState('#1E293B');
 
@@ -67,7 +77,7 @@ export default function App() {
   queryParams.set('name', formData.name);
   queryParams.set('role', formData.role);
   queryParams.set('orgName', formData.orgName);
-  queryParams.set('idNumber', formData.idNumber);
+  if (formData.idNumber) queryParams.set('idNumber', formData.idNumber);
   if (formData.email) queryParams.set('email', formData.email);
   if (formData.phone) queryParams.set('phone', formData.phone);
   if (formData.bloodGroup) queryParams.set('bloodGroup', formData.bloodGroup);
@@ -79,9 +89,10 @@ export default function App() {
   queryParams.set('layout', formData.layout);
 
   const dynamicDownloadUrl = `${appUrl}/api/id-card/download?${queryParams.toString()}`;
+  const downloadFileStem = formData.idNumber ? formData.idNumber.toLowerCase() : 'generated';
 
   // Helper code copy snippet trigger
-  const handleCopy = (text: string, type: 'curl' | 'js' | 'python' | 'link') => {
+  const handleCopy = (text: string, type: 'curl' | 'curl-minimum' | 'js' | 'python' | 'link') => {
     navigator.clipboard.writeText(text);
     setCopiedText(type);
     setTimeout(() => setCopiedText(null), 2500);
@@ -138,7 +149,7 @@ async function downloadIdCard() {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'id-card-' + payload.idNumber + '.pdf';
+    a.download = 'id-card-' + (payload.idNumber || 'generated') + '.pdf';
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -170,7 +181,7 @@ url = "${appUrl}/api/id-card/generate"
 response = requests.post(url, json=payload)
 
 if response.status_code == 200:
-    with open(f"id_card_{payload['idNumber']}.pdf", "wb") as f:
+    with open(f"id_card_{payload.get('idNumber') or 'generated'}.pdf", "wb") as f:
         f.write(response.content)
     print("Success! PDF card generated and saved locally.")
 else:
@@ -191,6 +202,15 @@ else:
     "themeColor": "${formData.themeColor}",
     "themeTextColor": "${formData.themeTextColor}",
     "layout": "${formData.layout}"
+  }' \\
+  --output id_card.pdf`;
+
+  const minimumCurlSnippet = `curl -X POST "${appUrl}/api/id-card/generate" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "name": "${formData.name}",
+    "role": "${formData.role}",
+    "orgName": "${formData.orgName}"
   }' \\
   --output id_card.pdf`;
 
@@ -471,8 +491,8 @@ else:
                         <tr>
                           <td className="p-3 font-semibold text-slate-800">idNumber</td>
                           <td className="p-3 text-purple-700">string</td>
-                          <td className="p-3 text-emerald-600 font-bold">Yes</td>
-                          <td className="p-3">"EMP-001928"</td>
+                          <td className="p-3 text-slate-400">No</td>
+                          <td className="p-3">Generated when omitted</td>
                         </tr>
                         <tr>
                           <td className="p-3 font-semibold text-slate-800">email</td>
@@ -496,13 +516,13 @@ else:
                           <td className="p-3 font-semibold text-slate-800">issuedDate</td>
                           <td className="p-3 text-purple-700">string</td>
                           <td className="p-3 text-slate-400">No</td>
-                          <td className="p-3">"06/2026"</td>
+                          <td className="p-3">Current date</td>
                         </tr>
                         <tr>
                           <td className="p-3 font-semibold text-slate-800">expiryDate</td>
                           <td className="p-3 text-purple-700">string</td>
                           <td className="p-3 text-slate-400">No</td>
-                          <td className="p-3">"06/2031"</td>
+                          <td className="p-3">Issue date + 2 years</td>
                         </tr>
                         <tr>
                           <td className="p-3 font-semibold text-slate-800">photoUrl</td>
@@ -520,7 +540,7 @@ else:
                           <td className="p-3 font-semibold text-slate-800">layout</td>
                           <td className="p-3 text-blue-700">"vertical" | "horizontal"</td>
                           <td className="p-3 text-slate-400">No</td>
-                          <td className="p-3">"vertical"</td>
+                          <td className="p-3">"horizontal"</td>
                         </tr>
                       </tbody>
                     </table>
@@ -541,7 +561,33 @@ else:
                   {/* cURL */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-mono font-bold text-slate-600">Terminal cURL</span>
+                      <span className="text-xs font-mono font-bold text-slate-600">Minimum cURL Payload</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(minimumCurlSnippet, 'curl-minimum')}
+                        className="text-[11px] font-mono text-indigo-600 hover:text-indigo-800 flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        {copiedText === 'curl-minimum' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copiedText === 'curl-minimum' ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                    <div className="relative">
+                      {/* Terminal window dots */}
+                      <div className="absolute top-3 right-4 flex gap-1.5 z-10">
+                        <div className="w-2.5 h-2.5 rounded-full bg-slate-700"></div>
+                        <div className="w-2.5 h-2.5 rounded-full bg-slate-700"></div>
+                        <div className="w-2.5 h-2.5 rounded-full bg-slate-700"></div>
+                      </div>
+                      <pre className="bg-slate-900 text-slate-100 rounded-sm p-4 font-mono text-[10.5px] overflow-x-auto select-all shadow-inner leading-relaxed border border-slate-800">
+                        {minimumCurlSnippet}
+                      </pre>
+                    </div>
+                  </div>
+
+                  {/* cURL */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-mono font-bold text-slate-600">Full cURL Payload</span>
                       <button
                         type="button"
                         onClick={() => handleCopy(curlSnippet, 'curl')}
@@ -635,16 +681,16 @@ else:
                       name: 'Jane Smith',
                       role: 'Staff Engineer',
                       orgName: 'Hyperion Tech',
-                      idNumber: 'HT-2026-9042',
-                      email: 'jane.smith@hyperion.io',
+                      idNumber: '',
+                      email: '',
                       phone: '+1 (555) 392-0941',
                       bloodGroup: 'O+',
-                      issuedDate: '06/2026',
-                      expiryDate: '06/2031',
+                      issuedDate: defaultIssuedDate,
+                      expiryDate: defaultExpiryDate,
                       photoUrl: '',
                       themeColor: '#1E293B',
                       themeTextColor: '#FFFFFF',
-                      layout: 'vertical',
+                      layout: 'horizontal',
                     });
                     setCustomHex('#1E293B');
                   }}
@@ -963,7 +1009,7 @@ else:
               {/* Main Download Action trigger */}
               <a
                 href={dynamicDownloadUrl}
-                download={`id-card-${formData.idNumber.toLowerCase()}.pdf`}
+                download={`id-card-${downloadFileStem}.pdf`}
                 className="w-full bg-emerald-500 hover:bg-emerald-400 text-indigo-950 font-black px-4 py-3.5 rounded-none flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-[0.98] transition-all text-xs cursor-pointer border-2 border-emerald-600 uppercase tracking-widest"
               >
                 <Download className="w-4 h-4 text-indigo-950" /> Download Generated ID Card PDF

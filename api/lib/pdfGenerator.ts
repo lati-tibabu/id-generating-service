@@ -17,6 +17,22 @@ export interface IdCardData {
   layout?: 'vertical' | 'horizontal'; // CR80 style proportions
 }
 
+function formatDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function addYears(date: Date, years: number): Date {
+  const next = new Date(date);
+  next.setFullYear(next.getFullYear() + years);
+  return next;
+}
+
+function fallbackIdNumber(): string {
+  const year = new Date().getFullYear();
+  const random = Math.floor(100000 + Math.random() * 900000);
+  return `ID-${year}-${random}`;
+}
+
 /**
  * Helper to fetch an image or convert a base64 string into a Buffer for PDFKit
  */
@@ -110,20 +126,21 @@ function drawSecurityGrid(doc: typeof PDFDocument, x: number, y: number, size: n
  * Generates the PDF Document and returns it as a Buffer
  */
 export async function generateIdCardPdf(data: IdCardData): Promise<Buffer> {
+  const defaultIssuedDate = formatDate(new Date());
   const {
     name = 'John Doe',
     role = 'Card Holder',
     orgName = 'Acme Corporation',
-    idNumber = 'EMP-001928',
-    email = 'john.doe@company.com',
+    idNumber = fallbackIdNumber(),
+    email = '',
     phone = '+1 (555) 123-4567',
     bloodGroup = 'O+',
-    issuedDate = '06/2026',
-    expiryDate = '06/2031',
+    issuedDate = defaultIssuedDate,
+    expiryDate = formatDate(addYears(new Date(issuedDate), 2)),
     photoUrl = '',
     themeColor = '#3B82F6',
     themeTextColor = '#FFFFFF',
-    layout = 'vertical',
+    layout = 'horizontal',
   } = data;
 
   // Credit Card Proportions at higher-fidelity size (rounded aspect ratio 1:1.6)
