@@ -6,7 +6,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Download, 
-  Code2, 
   Terminal, 
   Check, 
   Copy, 
@@ -15,12 +14,12 @@ import {
   ShieldCheck, 
   BookOpen,
   HeartHandshake,
-  Cpu,
   RefreshCw,
   Upload
 } from 'lucide-react';
 import { normalizeClientCardData } from './cardData';
 import { createEncryptedCardLink } from './encryptedLink';
+import SiteNav from './SiteNav';
 
 // Recommended predefined presets for ease of card building
 const BRAND_COLORS = [
@@ -61,12 +60,19 @@ export default function App() {
     layout: 'horizontal' as 'vertical' | 'horizontal',
   });
 
-  const [activeTab, setActiveTab] = useState<'endpoints' | 'playground' | 'curl'>('endpoints');
-  const [copiedText, setCopiedText] = useState<'curl' | 'curl-minimum' | 'js' | 'python' | 'link' | null>(null);
+  const [activeTab, setActiveTab] = useState<'endpoints' | 'playground' | 'curl'>(() => {
+    if (window.location.hash === '#playground') return 'playground';
+    if (window.location.hash === '#integration' || window.location.hash === '#flowable') return 'curl';
+    return 'endpoints';
+  });
+  const [copiedText, setCopiedText] = useState<'curl' | 'curl-minimum' | 'js' | 'python' | 'link' | 'password' | 'encrypted-curl' | 'encrypted-js' | 'flowable' | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [customHex, setCustomHex] = useState('#1E293B');
   const [encryptedCardUrl, setEncryptedCardUrl] = useState('');
+  const [encryptedCardPassword, setEncryptedCardPassword] = useState('');
   const [linkError, setLinkError] = useState('');
+  const [credentialSource, setCredentialSource] = useState<'browser' | 'api'>('browser');
+  const [isGeneratingWithApi, setIsGeneratingWithApi] = useState(false);
 
   // Sync color pickers
   useEffect(() => {
@@ -79,20 +85,48 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     setEncryptedCardUrl('');
+    setEncryptedCardPassword('');
     setLinkError('');
     const timer = window.setTimeout(() => {
       createEncryptedCardLink(appUrl, normalizeClientCardData(formData))
-        .then((url) => { if (!cancelled) setEncryptedCardUrl(url); })
+        .then(({ url, password }) => {
+          if (!cancelled) {
+            setEncryptedCardUrl(url);
+            setEncryptedCardPassword(password);
+            setCredentialSource('browser');
+          }
+        })
         .catch((error: Error) => { if (!cancelled) setLinkError(error.message); });
     }, 150);
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [appUrl, formData]);
 
   // Helper code copy snippet trigger
-  const handleCopy = (text: string, type: 'curl' | 'curl-minimum' | 'js' | 'python' | 'link') => {
+  const handleCopy = (text: string, type: 'curl' | 'curl-minimum' | 'js' | 'python' | 'link' | 'password' | 'encrypted-curl' | 'encrypted-js' | 'flowable') => {
     navigator.clipboard.writeText(text);
     setCopiedText(type);
     setTimeout(() => setCopiedText(null), 2500);
+  };
+
+  const generateWithApi = async () => {
+    setIsGeneratingWithApi(true);
+    setLinkError('');
+    try {
+      const response = await fetch(`${appUrl}/api/id-card/encrypted-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(normalizeClientCardData(formData)),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Encrypted-link generation failed.');
+      setEncryptedCardUrl(result.encryptedIdCardUrl);
+      setEncryptedCardPassword(result.idCardPassword);
+      setCredentialSource('api');
+    } catch (error) {
+      setLinkError(error instanceof Error ? error.message : 'Encrypted-link generation failed.');
+    } finally {
+      setIsGeneratingWithApi(false);
+    }
   };
 
   // Image File Uploader to convert target files to local base64 on-the-fly
@@ -211,44 +245,93 @@ else:
   }' \\
   --output id_card.pdf`;
 
+  const encryptedLinkCurlSnippet = `curl -X POST "${appUrl}/api/id-card/encrypted-link" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "name": "${formData.name}",
+    "role": "${formData.role}",
+    "orgName": "${formData.orgName}",
+    "idNumber": "${formData.idNumber}",
+    "email": "${formData.email}",
+    "phone": "${formData.phone}",
+    "bloodGroup": "${formData.bloodGroup}",
+    "issuedDate": "${formData.issuedDate}",
+    "expiryDate": "${formData.expiryDate}",
+    "photoUrl": "${formData.photoUrl.startsWith('data:') ? '<hosted-photo-url>' : formData.photoUrl}",
+    "themeColor": "${formData.themeColor}",
+    "themeTextColor": "${formData.themeTextColor}",
+    "layout": "${formData.layout}"
+  }'`;
+
+  const encryptedLinkJsSnippet = `const response = await fetch('${appUrl}/api/id-card/encrypted-link', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    name: '${formData.name}',
+    role: '${formData.role}',
+    orgName: '${formData.orgName}',
+    idNumber: '${formData.idNumber}',
+    email: '${formData.email}',
+    phone: '${formData.phone}',
+    bloodGroup: '${formData.bloodGroup}',
+    issuedDate: '${formData.issuedDate}',
+    expiryDate: '${formData.expiryDate}',
+    photoUrl: '${formData.photoUrl.startsWith('data:') ? '<hosted-photo-url>' : formData.photoUrl}',
+    themeColor: '${formData.themeColor}',
+    themeTextColor: '${formData.themeTextColor}',
+    layout: '${formData.layout}'
+  })
+});
+
+if (!response.ok) throw new Error('Unable to generate credentials');
+const { encryptedIdCardUrl, idCardPassword } = await response.json();
+console.log({ encryptedIdCardUrl, idCardPassword });`;
+
+  const flowableEndpointSnippet = `<serviceTask id="generateEncryptedCardCredentials"
+             name="Generate encrypted ID card credentials"
+             flowable:delegateExpression="\${httpCall}">
+  <extensionElements>
+    <flowable:field name="url" stringValue="${appUrl}/api/id-card/encrypted-link" />
+    <flowable:field name="method" stringValue="POST" />
+    <flowable:field name="contentType" stringValue="application/json" />
+    <flowable:field name="body">
+      <flowable:string><![CDATA[
+{
+  "name": "\${firstName} \${lastName}",
+  "role": "\${role}",
+  "orgName": "\${orgName}",
+  "idNumber": "\${idNumber}",
+  "email": "\${email}",
+  "phone": "\${phoneNumber}",
+  "bloodGroup": "\${bloodGroup}",
+  "issuedDate": "\${issuedDate}",
+  "expiryDate": "\${expiryDate}",
+  "photoUrl": "\${photoUrl}",
+  "themeColor": "#1E293B",
+  "themeTextColor": "#FFFFFF",
+  "layout": "horizontal"
+}
+      ]]></flowable:string>
+    </flowable:field>
+    <flowable:field name="saveResultAs" stringValue="encryptedCardCredentials" />
+  </extensionElements>
+</serviceTask>
+
+<scriptTask id="storeEncryptedCardCredentials"
+            name="Store encrypted card credentials"
+            scriptFormat="javascript"
+            flowable:autoStoreVariables="false">
+  <script><![CDATA[
+var credentials = execution.getVariable('encryptedCardCredentials');
+execution.setVariable('encryptedIdCardUrl', String(credentials.get('encryptedIdCardUrl')));
+execution.setVariable('idCardPassword', String(credentials.get('idCardPassword')));
+execution.setVariable('idNumber', String(credentials.get('idNumber')));
+  ]]></script>
+</scriptTask>`;
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 border-8 border-slate-200 flex flex-col justify-between font-sans selection:bg-indigo-500 selection:text-white">
-      {/* 1. TOP HEADER - GEOMETRIC BALANCE DESIGN STYLE */}
-      <header className="h-20 bg-white border-b border-slate-200 sticky top-0 z-40 backdrop-blur-md bg-white/90 flex items-center justify-between px-6 sm:px-10">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-indigo-600 rounded-sm flex items-center justify-center text-white font-bold text-xl shadow-sm">
-            ID
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-                ID-Gen <span className="text-indigo-600">API</span>
-              </h1>
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600 border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 rounded-full">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                Operational
-              </div>
-            </div>
-            <p className="hidden sm:block text-[10px] text-slate-400 font-mono mt-0.5">
-              CR80 Compliant Double-Sided PDF Printer Module
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4 sm:gap-6 text-slate-400 text-xs sm:text-sm font-mono">
-          <span className="hidden md:inline">STABLE V1.0.4</span>
-          <div className="hidden md:block h-4 w-px bg-slate-200" />
-          <a 
-            href="https://github.com" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            referrerPolicy="no-referrer"
-            className="hover:text-slate-600 transition-colors flex items-center gap-1 font-bold text-slate-700"
-          >
-            <Code2 className="w-3.5 h-3.5" /> SOURCE CODE
-          </a>
-        </div>
-      </header>
+      <SiteNav />
 
       <main className="w-full max-w-7xl mx-auto px-4 sm:px-8 mt-8 flex-grow">
         {/* UPPER ANNOUNCEMENT ZONE */}
@@ -368,6 +451,21 @@ else:
                     </div>
                   </div>
 
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-sm text-xs">
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                      <span className="bg-emerald-600 text-white font-mono font-bold px-2.5 py-0.5 text-[10px] tracking-wider uppercase">POST</span>
+                      <code className="text-slate-800 font-mono font-bold text-sm bg-white px-2 py-0.5 border border-emerald-200">/api/id-card/encrypted-link</code>
+                      <span className="text-[9px] font-black tracking-widest text-emerald-700">RECOMMENDED FOR WORKFLOWS</span>
+                    </div>
+                    <p className="text-slate-600 leading-relaxed mb-3 font-medium">Accepts the complete ID-card JSON payload and returns <code>encryptedIdCardUrl</code>, <code>idCardPassword</code>, and the final <code>idNumber</code>. No PDF or card data is persisted.</p>
+                    <pre className="overflow-x-auto bg-slate-950 p-3 font-mono text-[10px] leading-5 text-emerald-200">{`{
+  "encryptedIdCardUrl": "${appUrl}/card?data=...",
+  "idCardPassword": "K7DM-WQ9P-3HXR-V6AT",
+  "idNumber": "ID-2026-123456",
+  "algorithm": "AES-256-GCM"
+}`}</pre>
+                  </div>
+
                   {/* Endpoint Block 2 */}
                   <div className="p-4 bg-slate-50 border border-slate-200 rounded-sm text-xs">
                     <div className="flex items-center gap-2 mb-3">
@@ -375,14 +473,14 @@ else:
                         GET
                       </span>
                       <code className="text-slate-800 font-mono font-bold text-sm bg-slate-100 px-2 py-0.5 rounded-none border border-slate-200">
-                        /card?data=…#key=…
+                        /card?data=…
                       </code>
                     </div>
                     <p className="text-slate-600 leading-relaxed mb-4 font-medium">
-                      Accepts an AES-256-GCM encrypted payload and a random key in the URL fragment. The browser decrypts, renders, and exports the card without sending personal fields to the PDF API.
+                      Accepts an AES-256-GCM encrypted payload. A separately generated password derives the decryption key locally with PBKDF2 before the browser renders and exports the card.
                     </p>
                     <code className="block bg-slate-100 border border-slate-200 p-2.5 rounded-none text-slate-600 font-mono text-[10.5px] overflow-x-auto whitespace-pre-wrap select-all">
-                      {`${appUrl}/card?data=<encrypted-payload>#key=<one-time-key>`}
+                      {`${appUrl}/card?data=<salt-iv-and-encrypted-payload>`}
                     </code>
                     <div className="border-t border-slate-200 pt-3 mt-3 flex items-center justify-between text-[11px] text-slate-400 font-mono">
                       <span>Header: None Required</span>
@@ -470,19 +568,19 @@ else:
                         <tr>
                           <td className="p-3 font-semibold text-slate-800">name</td>
                           <td className="p-3 text-purple-700">string</td>
-                          <td className="p-3 text-emerald-600 font-bold">Yes</td>
+                          <td className="p-3 text-slate-400">No</td>
                           <td className="p-3">"John Doe"</td>
                         </tr>
                         <tr>
                           <td className="p-3 font-semibold text-slate-800">role</td>
                           <td className="p-3 text-purple-700">string</td>
-                          <td className="p-3 text-emerald-600 font-bold">Yes</td>
+                          <td className="p-3 text-slate-400">No</td>
                           <td className="p-3">"Card Holder"</td>
                         </tr>
                         <tr>
                           <td className="p-3 font-semibold text-slate-800">orgName</td>
                           <td className="p-3 text-purple-700">string</td>
-                          <td className="p-3 text-emerald-600 font-bold">Yes</td>
+                          <td className="p-3 text-slate-400">No</td>
                           <td className="p-3">"Acme Corporation"</td>
                         </tr>
                         <tr>
@@ -534,6 +632,12 @@ else:
                           <td className="p-3">"#1E293B"</td>
                         </tr>
                         <tr>
+                          <td className="p-3 font-semibold text-slate-800">themeTextColor</td>
+                          <td className="p-3 text-purple-700">string (hex)</td>
+                          <td className="p-3 text-slate-400">No</td>
+                          <td className="p-3">"#FFFFFF"</td>
+                        </tr>
+                        <tr>
                           <td className="p-3 font-semibold text-slate-800">layout</td>
                           <td className="p-3 text-blue-700">"vertical" | "horizontal"</td>
                           <td className="p-3 text-slate-400">No</td>
@@ -551,8 +655,25 @@ else:
                   <div>
                     <h2 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-2">Developer Implementation Guides</h2>
                     <p className="text-xs text-slate-500">
-                      Copy standard robust requests codeblocks to immediately embed ID generation capabilities into your microservices.
+                      Generate encrypted delivery credentials or download a PDF directly. All card fields are included below.
                     </p>
+                  </div>
+
+                  <div className="border-2 border-emerald-200 bg-emerald-50 p-4 space-y-4">
+                    <div><div className="text-[10px] font-black tracking-widest text-emerald-700">PASSWORD-PROTECTED LINK API</div><h3 className="mt-1 font-black text-slate-900">Complete cURL request</h3></div>
+                    <div className="flex justify-end"><button type="button" onClick={() => handleCopy(encryptedLinkCurlSnippet, 'encrypted-curl')} className="text-[11px] font-mono font-bold text-emerald-700 flex items-center gap-1">{copiedText === 'encrypted-curl' ? <Check className="w-3.5 h-3.5"/> : <Copy className="w-3.5 h-3.5"/>} Copy</button></div>
+                    <pre className="max-h-96 overflow-auto bg-slate-950 p-4 font-mono text-[10.5px] leading-relaxed text-slate-100">{encryptedLinkCurlSnippet}</pre>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between"><span className="text-xs font-mono font-bold text-slate-600">JavaScript encrypted-link request</span><button type="button" onClick={() => handleCopy(encryptedLinkJsSnippet, 'encrypted-js')} className="text-[11px] font-mono text-indigo-600 flex items-center gap-1">{copiedText === 'encrypted-js' ? <Check className="w-3.5 h-3.5"/> : <Copy className="w-3.5 h-3.5"/>} Copy</button></div>
+                    <pre className="max-h-96 overflow-auto bg-slate-900 p-4 font-mono text-[10.5px] leading-relaxed text-slate-100">{encryptedLinkJsSnippet}</pre>
+                  </div>
+
+                  <div id="flowable" className="space-y-2">
+                    <div className="flex items-center justify-between"><span className="text-xs font-mono font-bold text-slate-600">Flowable HTTP service task</span><button type="button" onClick={() => handleCopy(flowableEndpointSnippet, 'flowable')} className="text-[11px] font-mono text-indigo-600 flex items-center gap-1">{copiedText === 'flowable' ? <Check className="w-3.5 h-3.5"/> : <Copy className="w-3.5 h-3.5"/>} Copy</button></div>
+                    <pre className="max-h-[32rem] overflow-auto bg-slate-900 p-4 font-mono text-[10.5px] leading-relaxed text-slate-100">{flowableEndpointSnippet}</pre>
+                    <p className="text-[11px] leading-5 text-slate-500">The repository also includes <code>docs/FLOWABLE_ENCRYPTED_CARD_LINK.md</code> with the no-HTTP script-task alternative and complete cryptographic format.</p>
                   </div>
 
                   {/* cURL */}
@@ -981,8 +1102,31 @@ else:
                   Live Code Link Creator
                 </h4>
                 <p className="text-[11px] text-indigo-200/90 leading-relaxed mt-1 font-medium">
-                  This page encrypts the current payload with built-in Web Crypto. Opening the link decrypts and renders the card locally, with a browser-generated PDF download.
+                  This page generates an encrypted URL and a separate password. Opening the link shows a locked page; the card and PDF become available only after the password is entered.
                 </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="text-[9px] font-black tracking-widest text-indigo-400">SOURCE: {credentialSource === 'api' ? 'POST ENDPOINT' : 'BROWSER WEB CRYPTO'}</span>
+                  <button type="button" onClick={generateWithApi} disabled={isGeneratingWithApi} className="border border-indigo-700 bg-indigo-900 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-indigo-100 transition hover:bg-indigo-800 disabled:opacity-50">{isGeneratingWithApi ? 'Calling endpoint…' : 'Generate through API'}</button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 border border-emerald-500/30 p-3 bg-emerald-500/10">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-mono tracking-wider text-emerald-300">SEPARATE CARD PASSWORD:</span>
+                  <button
+                    type="button"
+                    onClick={() => encryptedCardPassword && handleCopy(encryptedCardPassword, 'password')}
+                    disabled={!encryptedCardPassword}
+                    className="text-[10px] uppercase font-mono tracking-wider hover:text-emerald-200 flex items-center gap-1 transition-colors cursor-pointer text-emerald-400 font-bold"
+                  >
+                    {copiedText === 'password' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                    Copy Password
+                  </button>
+                </div>
+                <code className="block bg-indigo-950 border border-emerald-500/20 p-2.5 text-sm font-mono font-black tracking-widest text-emerald-300 select-all">
+                  {encryptedCardPassword || 'Generating password…'}
+                </code>
+                <p className="text-[10px] leading-relaxed text-indigo-200/70">Send this password separately from the URL when practical.</p>
               </div>
 
               {/* Real URL block */}

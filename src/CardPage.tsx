@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { AlertTriangle, Download, LoaderCircle, LockKeyhole, ShieldCheck } from 'lucide-react';
+import { useState, type FormEvent } from 'react';
+import { Download, LockKeyhole, ShieldCheck, UnlockKeyhole } from 'lucide-react';
 import { decryptCardLink } from './encryptedLink';
 import { isClientIdCardData, normalizeClientCardData, type ClientIdCardData } from './cardData';
 import { downloadIdCardPdf } from './clientPdf';
@@ -44,22 +44,48 @@ function CardPreview({ data, back = false }: { data: ClientIdCardData; back?: bo
 
 export default function CardPage() {
   const [data, setData] = useState<ClientIdCardData | null>(null);
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [unlocking, setUnlocking] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  useEffect(() => { decryptCardLink(window.location).then((value) => {
-    if (!isClientIdCardData(value)) throw new Error('The decrypted card data is not valid.');
-    setData(normalizeClientCardData(value));
-  }).catch((reason: Error) => setError(reason.message)); }, []);
 
-  if (error) return <main className="min-h-screen bg-slate-950 px-6 py-20 text-white"><div className="mx-auto max-w-lg rounded-2xl border border-red-400/30 bg-red-400/10 p-8"><AlertTriangle className="mb-4 h-9 w-9 text-red-300"/><h1 className="text-2xl font-black">Unable to open ID card</h1><p className="mt-3 text-sm text-red-100/80">{error}</p></div></main>;
-  if (!data) return <main className="flex min-h-screen items-center justify-center bg-slate-950 text-white"><LoaderCircle className="mr-3 h-6 w-6 animate-spin"/> Decrypting card locally…</main>;
+  const unlock = async (event: FormEvent) => {
+    event.preventDefault();
+    setError('');
+    setUnlocking(true);
+    try {
+      const value = await decryptCardLink(window.location, password);
+      if (!isClientIdCardData(value)) throw new Error('The decrypted card data is not valid.');
+      setData(normalizeClientCardData(value));
+      setPassword('');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to unlock this ID card.');
+    } finally {
+      setUnlocking(false);
+    }
+  };
+
+  if (!data) return <main className="flex min-h-screen items-center justify-center bg-slate-950 px-5 py-12 text-white">
+    <div className="w-full max-w-md border border-slate-700 bg-slate-900 p-8 shadow-2xl">
+      <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-300"><LockKeyhole className="h-6 w-6"/></div>
+      <div className="text-xs font-bold tracking-[0.2em] text-emerald-300">ENCRYPTED ID CARD</div>
+      <h1 className="mt-2 text-3xl font-black">Enter your password</h1>
+      <p className="mt-3 text-sm leading-6 text-slate-400">Use the separate password supplied with this link. Decryption happens only inside your browser.</p>
+      <form onSubmit={unlock} className="mt-7">
+        <label htmlFor="card-password" className="mb-2 block text-xs font-bold tracking-widest text-slate-300">CARD PASSWORD</label>
+        <input id="card-password" type="password" value={password} onChange={(event) => setPassword(event.target.value.toUpperCase())} autoComplete="one-time-code" autoCapitalize="characters" spellCheck={false} autoFocus placeholder="XXXX-XXXX-XXXX-XXXX" className="w-full border border-slate-600 bg-slate-950 px-4 py-3 font-mono tracking-widest text-white outline-none transition focus:border-emerald-400"/>
+        {error && <p role="alert" className="mt-3 text-sm text-red-300">{error}</p>}
+        <button type="submit" disabled={unlocking || !password.trim()} className="mt-5 flex w-full items-center justify-center gap-2 bg-emerald-400 px-5 py-3 font-black text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"><UnlockKeyhole className="h-5 w-5"/>{unlocking ? 'Unlocking…' : 'Unlock ID Card'}</button>
+      </form>
+    </div>
+  </main>;
 
   return <main className="min-h-screen bg-slate-950 px-4 py-8 text-white sm:px-8">
     <div className="mx-auto max-w-6xl">
       <header className="mb-8 flex flex-wrap items-center justify-between gap-5"><div><div className="mb-2 flex items-center gap-2 text-xs font-bold tracking-widest text-emerald-300"><LockKeyhole className="h-4 w-4"/> LOCALLY DECRYPTED</div><h1 className="text-3xl font-black">Your digital ID card</h1><p className="mt-2 max-w-xl text-sm text-slate-400">The encrypted link was opened and rendered in this browser. No personal card data was sent to the PDF API.</p></div>
       <button type="button" disabled={downloading} onClick={async () => { setDownloading(true); try { await downloadIdCardPdf(data); } finally { setDownloading(false); } }} className="flex items-center gap-2 bg-emerald-400 px-6 py-3 font-black text-slate-950 transition hover:bg-emerald-300 disabled:opacity-60"><Download className="h-5 w-5"/>{downloading ? 'Preparing PDF…' : 'Download PDF'}</button></header>
       <section className="grid items-start gap-8 lg:grid-cols-2"><div><div className="mb-3 text-xs font-bold tracking-widest text-slate-500">FRONT</div><CardPreview data={data}/></div><div><div className="mb-3 text-xs font-bold tracking-widest text-slate-500">BACK</div><CardPreview data={data} back/></div></section>
-      <div className="mt-8 flex items-start gap-3 border border-slate-700 bg-slate-900 p-4 text-xs text-slate-400"><ShieldCheck className="h-5 w-5 shrink-0 text-emerald-400"/><p>This link acts like a password: anyone who receives the complete URL can open the card. Share it only with the intended card holder.</p></div>
+      <div className="mt-8 flex items-start gap-3 border border-slate-700 bg-slate-900 p-4 text-xs text-slate-400"><ShieldCheck className="h-5 w-5 shrink-0 text-emerald-400"/><p>This card was unlocked locally. The password was not placed in the URL or sent to the server.</p></div>
     </div>
   </main>;
 }

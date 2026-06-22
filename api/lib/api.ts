@@ -1,6 +1,7 @@
 import express from 'express';
 import { generateIdCardPdf } from './pdfGenerator.js';
 import type { IdCardData } from './pdfGenerator.js';
+import { generateEncryptedCardLink } from './encryptedLink.js';
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
@@ -44,7 +45,7 @@ function generateIdNumber(): string {
   return `ID-${year}-${random}`;
 }
 
-function normalizeIdCardData(input: Partial<IdCardData> = {}): IdCardData {
+export function normalizeIdCardData(input: Partial<IdCardData> = {}): IdCardData {
   const issuedDate = stringValue(input.issuedDate) ?? formatDate(new Date());
   const parsedIssuedDate = parseIssuedDate(issuedDate);
 
@@ -75,6 +76,27 @@ export function createApi() {
   // API Route: Check API health
   api.get('/health', (req, res) => {
     res.json({ status: 'ok', message: 'ID Card Generator API is operational' });
+  });
+
+  // Generate a password-protected browser URL without creating or storing a PDF.
+  api.post('/id-card/encrypted-link', async (req, res) => {
+    try {
+      const data = normalizeIdCardData(req.body);
+      const forwardedProtocol = req.get('x-forwarded-proto')?.split(',')[0]?.trim();
+      const requestOrigin = `${forwardedProtocol || req.protocol}://${req.get('host')}`;
+      const appUrl = process.env.PUBLIC_APP_URL?.trim() || requestOrigin;
+      const credentials = await generateEncryptedCardLink(data, appUrl);
+
+      return res.status(201).json({
+        ...credentials,
+        idNumber: data.idNumber,
+        algorithm: 'AES-256-GCM',
+        keyDerivation: 'PBKDF2-HMAC-SHA256',
+      });
+    } catch (error: any) {
+      console.error('Error generating encrypted ID-card link:', error);
+      return res.status(500).json({ error: 'Failed to generate encrypted ID-card link', details: error.message });
+    }
   });
 
   // API Route: Generate standard PDF and serve it inline

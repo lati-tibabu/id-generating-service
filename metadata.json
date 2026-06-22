@@ -1,6 +1,6 @@
 {
-  "name": "ID Card Generator API",
-  "description": "An open-source, free API for taking personal information and generating beautiful, print-ready PDF ID cards with an interactive documentation UI.",
+  "name": "ID-Link Studio",
+  "description": "Generate print-ready ID cards and deliver them with password-protected encrypted links.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

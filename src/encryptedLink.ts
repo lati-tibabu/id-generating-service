@@ -1,5 +1,6 @@
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const PBKDF2_ITERATIONS = 210_000;
 
 function toBase64Url(bytes: Uint8Array): string {
   let binary = '';
@@ -13,42 +14,66 @@ function fromBase64Url(value: string): Uint8Array {
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
-export async function createEncryptedCardLink(origin: string, data: unknown): Promise<string> {
+export interface EncryptedCardCredential {
+  url: string;
+  password: string;
+}
+
+function createPassword(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const random = crypto.getRandomValues(new Uint8Array(16));
+  const compact = Array.from(random, (value) => alphabet[value & 31]).join('');
+  return compact.match(/.{1,4}/g)!.join('-');
+}
+
+async function deriveKey(password: string, salt: Uint8Array, usage: KeyUsage): Promise<CryptoKey> {
+  const passwordKey = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', hash: 'SHA-256', salt, iterations: PBKDF2_ITERATIONS },
+    passwordKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    [usage],
+  );
+}
+
+export async function createEncryptedCardLink(origin: string, data: unknown): Promise<EncryptedCardCredential> {
   if (!crypto?.subtle) throw new Error('This browser does not support Web Crypto.');
 
-  const keyBytes = crypto.getRandomValues(new Uint8Array(32));
+  const password = createPassword();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
+  const key = await deriveKey(password, salt, 'encrypt');
   const encrypted = new Uint8Array(
     await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoder.encode(JSON.stringify(data))),
   );
-  const payload = new Uint8Array(iv.length + encrypted.length);
-  payload.set(iv);
-  payload.set(encrypted, iv.length);
+  const payload = new Uint8Array(salt.length + iv.length + encrypted.length);
+  payload.set(salt);
+  payload.set(iv, salt.length);
+  payload.set(encrypted, salt.length + iv.length);
 
-  return `${origin}/card?data=${toBase64Url(payload)}#key=${toBase64Url(keyBytes)}`;
+  return { url: `${origin}/card?data=${toBase64Url(payload)}`, password };
 }
 
-export async function decryptCardLink(location: Location): Promise<unknown> {
+export async function decryptCardLink(location: Location, password: string): Promise<unknown> {
   if (!crypto?.subtle) throw new Error('This browser does not support Web Crypto.');
 
   const payloadValue = new URLSearchParams(location.search).get('data');
-  const keyValue = new URLSearchParams(location.hash.slice(1)).get('key');
-  if (!payloadValue || !keyValue) throw new Error('This ID-card link is incomplete.');
+  if (!payloadValue) throw new Error('This ID-card link is incomplete.');
+  if (!password.trim()) throw new Error('Enter the password supplied with this ID-card link.');
 
   const payload = fromBase64Url(payloadValue);
-  const keyBytes = fromBase64Url(keyValue);
-  if (payload.length < 29 || keyBytes.length !== 32) throw new Error('This ID-card link is malformed.');
+  if (payload.length < 45) throw new Error('This ID-card link is malformed.');
 
   try {
-    const key = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['decrypt']);
+    const key = await deriveKey(password.trim().toUpperCase(), payload.slice(0, 16), 'decrypt');
     const plain = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: payload.slice(0, 12) },
+      { name: 'AES-GCM', iv: payload.slice(16, 28) },
       key,
-      payload.slice(12),
+      payload.slice(28),
     );
     return JSON.parse(decoder.decode(plain));
   } catch {
-    throw new Error('This ID-card link is invalid or has been modified.');
+    throw new Error('Incorrect password, or this ID-card link has been modified.');
   }
 }
