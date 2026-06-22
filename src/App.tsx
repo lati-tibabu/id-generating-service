@@ -459,6 +459,7 @@ execution.setVariable('idNumber', String(credentials.get('idNumber')));
                     </div>
                     <p className="text-slate-600 leading-relaxed mb-3 font-medium">Accepts the complete ID-card JSON payload and returns <code>encryptedIdCardUrl</code>, <code>idCardPassword</code>, and the final <code>idNumber</code>. No PDF or card data is persisted.</p>
                     <pre className="overflow-x-auto bg-slate-950 p-3 font-mono text-[10px] leading-5 text-emerald-200">{`{
+  "ok": true,
   "encryptedIdCardUrl": "${appUrl}/card?data=...",
   "idCardPassword": "K7DM-WQ9P-3HXR-V6AT",
   "idNumber": "ID-2026-123456",

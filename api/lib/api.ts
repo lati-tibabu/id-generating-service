@@ -88,6 +88,7 @@ export function createApi() {
       const credentials = await generateEncryptedCardLink(data, appUrl);
 
       return res.status(201).json({
+        ok: true,
         ...credentials,
         idNumber: data.idNumber,
         algorithm: 'AES-256-GCM',
@@ -95,7 +96,11 @@ export function createApi() {
       });
     } catch (error: any) {
       console.error('Error generating encrypted ID-card link:', error);
-      return res.status(500).json({ error: 'Failed to generate encrypted ID-card link', details: error.message });
+      return res.status(500).json({
+        ok: false,
+        error: 'Failed to generate encrypted ID-card link',
+        details: error.message,
+      });
     }
   });
 
@@ -146,6 +151,14 @@ export function createApi() {
       console.error('Error downloading PDF:', error);
       return res.status(500).send(`Server Error: Failed to download ID card. ${error.message}`);
     }
+  });
+
+  // Keep JSON parsing failures inside the API's JSON response contract.
+  api.use((error: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (error?.type === 'entity.parse.failed') {
+      return res.status(400).json({ ok: false, error: 'Invalid JSON request body' });
+    }
+    return next(error);
   });
 
   return api;

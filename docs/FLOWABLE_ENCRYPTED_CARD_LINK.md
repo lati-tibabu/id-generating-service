@@ -37,6 +37,7 @@ The endpoint returns HTTP `201`:
 
 ```json
 {
+  "ok": true,
   "encryptedIdCardUrl": "https://id-generating-service.vercel.app/card?data=...",
   "idCardPassword": "K7DM-WQ9P-3HXR-V6AT",
   "idNumber": "EMP-2026-0042",
@@ -44,6 +45,8 @@ The endpoint returns HTTP `201`:
   "keyDerivation": "PBKDF2-HMAC-SHA256"
 }
 ```
+
+Failures return `ok: false` together with `error` and `details`.
 
 Set `PUBLIC_APP_URL` in production so generated links always use the public deployment origin.
 
