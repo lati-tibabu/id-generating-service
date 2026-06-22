@@ -18,3 +18,7 @@ View your app in AI Studio: https://ai.studio/apps/6339f78c-ab4c-4b18-a261-d5846
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Encrypted workflow links
+
+The browser-only `/card?data=...#key=...` flow decrypts and renders an ID card locally, then downloads its two-sided PDF without calling the PDF API. See [the Flowable encrypted-link guide](docs/FLOWABLE_ENCRYPTED_CARD_LINK.md) for the paste-ready script task.

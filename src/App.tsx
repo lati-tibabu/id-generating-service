@@ -19,6 +19,8 @@ import {
   RefreshCw,
   Upload
 } from 'lucide-react';
+import { normalizeClientCardData } from './cardData';
+import { createEncryptedCardLink } from './encryptedLink';
 
 // Recommended predefined presets for ease of card building
 const BRAND_COLORS = [
@@ -63,6 +65,8 @@ export default function App() {
   const [copiedText, setCopiedText] = useState<'curl' | 'curl-minimum' | 'js' | 'python' | 'link' | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [customHex, setCustomHex] = useState('#1E293B');
+  const [encryptedCardUrl, setEncryptedCardUrl] = useState('');
+  const [linkError, setLinkError] = useState('');
 
   // Sync color pickers
   useEffect(() => {
@@ -72,24 +76,17 @@ export default function App() {
   // Read developer info
   const appUrl = (typeof window !== 'undefined' ? window.location.origin : '') || 'https://ais-dev-gxidif2it24jlpgovnbt4m-608083615985.europe-west2.run.app';
   
-  // Construct dynamic download GET link for testing in the client
-  const queryParams = new URLSearchParams();
-  queryParams.set('name', formData.name);
-  queryParams.set('role', formData.role);
-  queryParams.set('orgName', formData.orgName);
-  if (formData.idNumber) queryParams.set('idNumber', formData.idNumber);
-  if (formData.email) queryParams.set('email', formData.email);
-  if (formData.phone) queryParams.set('phone', formData.phone);
-  if (formData.bloodGroup) queryParams.set('bloodGroup', formData.bloodGroup);
-  if (formData.issuedDate) queryParams.set('issuedDate', formData.issuedDate);
-  if (formData.expiryDate) queryParams.set('expiryDate', formData.expiryDate);
-  if (formData.photoUrl) queryParams.set('photoUrl', formData.photoUrl);
-  queryParams.set('themeColor', formData.themeColor);
-  queryParams.set('themeTextColor', formData.themeTextColor);
-  queryParams.set('layout', formData.layout);
-
-  const dynamicDownloadUrl = `${appUrl}/api/id-card/download?${queryParams.toString()}`;
-  const downloadFileStem = formData.idNumber ? formData.idNumber.toLowerCase() : 'generated';
+  useEffect(() => {
+    let cancelled = false;
+    setEncryptedCardUrl('');
+    setLinkError('');
+    const timer = window.setTimeout(() => {
+      createEncryptedCardLink(appUrl, normalizeClientCardData(formData))
+        .then((url) => { if (!cancelled) setEncryptedCardUrl(url); })
+        .catch((error: Error) => { if (!cancelled) setLinkError(error.message); });
+    }, 150);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [appUrl, formData]);
 
   // Helper code copy snippet trigger
   const handleCopy = (text: string, type: 'curl' | 'curl-minimum' | 'js' | 'python' | 'link') => {
@@ -348,7 +345,7 @@ else:
                   <div>
                     <h2 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-2">Endpoint Specifications</h2>
                     <p className="text-xs text-slate-500 leading-relaxed">
-                      Developers can interact with this engine through two distinct routes. We support clean <b>POST</b> payloads structured in JSON, or a fast-track <b>GET</b> route returning an immediate file download attachment.
+                      Developers can use the existing <b>POST</b> PDF API, or send a private encrypted <b>GET</b> link that opens a browser-rendered card and local PDF download page.
                     </p>
                   </div>
 
@@ -378,18 +375,18 @@ else:
                         GET
                       </span>
                       <code className="text-slate-800 font-mono font-bold text-sm bg-slate-100 px-2 py-0.5 rounded-none border border-slate-200">
-                        /api/id-card/download
+                        /card?data=…#key=…
                       </code>
                     </div>
                     <p className="text-slate-600 leading-relaxed mb-4 font-medium">
-                      Accepts web standardized query flags directly within any URL. Ideal for standard HTML anchor tags, download hyperlinks, or direct browser redirect links.
+                      Accepts an AES-256-GCM encrypted payload and a random key in the URL fragment. The browser decrypts, renders, and exports the card without sending personal fields to the PDF API.
                     </p>
                     <code className="block bg-slate-100 border border-slate-200 p-2.5 rounded-none text-slate-600 font-mono text-[10.5px] overflow-x-auto whitespace-pre-wrap select-all">
-                      {`${appUrl}/api/id-card/download?name=John+Doe&role=Security&orgName=Acme`}
+                      {`${appUrl}/card?data=<encrypted-payload>#key=<one-time-key>`}
                     </code>
                     <div className="border-t border-slate-200 pt-3 mt-3 flex items-center justify-between text-[11px] text-slate-400 font-mono">
                       <span>Header: None Required</span>
-                      <span>Response: application/pdf (attachment)</span>
+                      <span>Response: client-rendered page</span>
                     </div>
                   </div>
 
@@ -984,17 +981,18 @@ else:
                   Live Code Link Creator
                 </h4>
                 <p className="text-[11px] text-indigo-200/90 leading-relaxed mt-1 font-medium">
-                  Clicking the download connection invokes our direct GET API, prompting the server's PDF printer streaming buffer directly to your native client downloads.
+                  This page encrypts the current payload with built-in Web Crypto. Opening the link decrypts and renders the card locally, with a browser-generated PDF download.
                 </p>
               </div>
 
               {/* Real URL block */}
               <div className="space-y-1.5 border border-indigo-900/60 p-3 rounded-none bg-indigo-950/70">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase font-mono tracking-wider text-indigo-300">GET ENDPOINT DOWNLOAD REFLINK:</span>
+                  <span className="text-[10px] uppercase font-mono tracking-wider text-indigo-300">ENCRYPTED CARD LINK:</span>
                   <button
                     type="button"
-                    onClick={() => handleCopy(dynamicDownloadUrl, 'link')}
+                    onClick={() => encryptedCardUrl && handleCopy(encryptedCardUrl, 'link')}
+                    disabled={!encryptedCardUrl}
                     className="text-[10px] uppercase font-mono tracking-wider hover:text-indigo-200 flex items-center gap-1 transition-colors cursor-pointer text-indigo-400 font-bold"
                   >
                     {copiedText === 'link' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
@@ -1002,17 +1000,19 @@ else:
                   </button>
                 </div>
                 <code className="block bg-indigo-900 border border-indigo-800 p-2 text-[10.5px] font-mono text-indigo-100 select-all rounded-none break-all max-h-24 overflow-y-auto">
-                  {dynamicDownloadUrl}
+                  {linkError || encryptedCardUrl || 'Encrypting payload locally…'}
                 </code>
               </div>
 
               {/* Main Download Action trigger */}
               <a
-                href={dynamicDownloadUrl}
-                download={`id-card-${downloadFileStem}.pdf`}
-                className="w-full bg-emerald-500 hover:bg-emerald-400 text-indigo-950 font-black px-4 py-3.5 rounded-none flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-[0.98] transition-all text-xs cursor-pointer border-2 border-emerald-600 uppercase tracking-widest"
+                href={encryptedCardUrl || undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-disabled={!encryptedCardUrl}
+                className={`w-full bg-emerald-500 hover:bg-emerald-400 text-indigo-950 font-black px-4 py-3.5 rounded-none flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-[0.98] transition-all text-xs border-2 border-emerald-600 uppercase tracking-widest ${encryptedCardUrl ? 'cursor-pointer' : 'pointer-events-none opacity-60'}`}
               >
-                <Download className="w-4 h-4 text-indigo-950" /> Download Generated ID Card PDF
+                <Download className="w-4 h-4 text-indigo-950" /> Open Encrypted Card Page
               </a>
             </div>
           </div>
